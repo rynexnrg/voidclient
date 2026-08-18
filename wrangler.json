@@ -1,0 +1,16 @@
+{
+	"compatibility_date": "2025-10-08",
+	"main": "src/index.ts",
+	"name": "voidclient",
+	"upload_source_maps": true,
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_id": "a4be0849-c8b6-4dc7-9aad-6a93de95fd94",
+			"database_name": "voidDatabase"
+		}
+	],
+	"observability": {
+		"enabled": true
+	}
+}
