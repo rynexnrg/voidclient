@@ -1,7 +1,10 @@
-import { renderHtml } from "./renderHtml";
-
 interface Env {
 	DB: D1Database;
+}
+
+interface LoginRequest {
+	uuid?: string;
+	username?: string;
 }
 
 interface UserRequest {
@@ -34,12 +37,95 @@ function normalizeUuid(uuid: string): string {
 	return uuid.trim().replace(/-/g, "").toLowerCase();
 }
 
+async function registerUser(
+	env: Env,
+	uuidInput: string,
+	usernameInput: string
+) {
+	const uuid = normalizeUuid(uuidInput);
+	const username = normalizeUsername(usernameInput);
+
+	if (!uuid || !username) {
+		return json(
+			{
+				success: false,
+				error: "Ungültige Daten.",
+			},
+			400
+		);
+	}
+
+	const existing = await env.DB
+		.prepare(
+			`SELECT id, minecraft_uuid, username, online, last_online, created_at
+			 FROM users
+			 WHERE minecraft_uuid = ?`
+		)
+		.bind(uuid)
+		.first();
+
+	if (existing) {
+		await env.DB
+			.prepare(
+				`UPDATE users
+				 SET username = ?,
+				     online = 1,
+				     last_online = unixepoch()
+				 WHERE minecraft_uuid = ?`
+			)
+			.bind(username, uuid)
+			.run();
+
+		const updated = await env.DB
+			.prepare(
+				`SELECT id, minecraft_uuid, username, online, last_online, created_at
+				 FROM users
+				 WHERE minecraft_uuid = ?`
+			)
+			.bind(uuid)
+			.first();
+
+		return json({
+			success: true,
+			new_user: false,
+			message: "Benutzer aktualisiert.",
+			user: updated,
+		});
+	}
+
+	const result = await env.DB
+		.prepare(
+			`INSERT INTO users
+				(minecraft_uuid, username, online)
+			 VALUES (?, ?, 1)`
+		)
+		.bind(uuid, username)
+		.run();
+
+	const newUser = await env.DB
+		.prepare(
+			`SELECT id, minecraft_uuid, username, online, last_online, created_at
+			 FROM users
+			 WHERE minecraft_uuid = ?`
+		)
+		.bind(uuid)
+		.first();
+
+	return json({
+		success: true,
+		new_user: true,
+		message: "Benutzer wurde registriert.",
+		user: newUser,
+		insert_id: result.meta.last_row_id,
+	});
+}
+
 export default {
 	async fetch(request, env): Promise<Response> {
 		try {
 			/*
 			 * ==========================================
-			 * CORS / OPTIONS
+			 * CORS
 			 * ==========================================
 			 */
 
@@ -50,7 +136,8 @@ export default {
 						"access-control-allow-origin": "*",
 						"access-control-allow-methods":
 							"GET, POST, DELETE, OPTIONS",
-						"access-control-allow-headers": "Content-Type",
+						"access-control-allow-headers":
+							"Content-Type",
 					},
 				});
 			}
@@ -60,11 +147,8 @@ export default {
 
 			/*
 			 * ==========================================
-			 * API: HEALTH
+			 * HEALTH
 			 * ==========================================
-			 *
-			 * Test:
-			 * https://voidclient.rynexnrg.workers.dev/api/health
 			 */
 
 			if (path === "/api/health" && request.method === "GET") {
@@ -79,26 +163,57 @@ export default {
 
 			/*
 			 * ==========================================
-			 * API: REGISTER / UPDATE USER
-			 * ==========================================
+			 * JAVA LAUNCHER LOGIN
 			 *
-			 * POST /api/user/register
+			 * POST /api/login
 			 *
-			 * JSON:
+			 * Java sendet:
+			 *
 			 * {
-			 *   "minecraft_uuid": "...",
+			 *   "uuid": "...",
 			 *   "username": "..."
 			 * }
+			 * ==========================================
+			 */
+
+			if (path === "/api/login" && request.method === "POST") {
+				const body = (await request.json()) as LoginRequest;
+
+				if (!body.uuid || !body.username) {
+					return json(
+						{
+							success: false,
+							error: "uuid und username sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				return registerUser(
+					env,
+					body.uuid,
+					body.username
+				);
+			}
+
+			/*
+			 * ==========================================
+			 * REGISTER
+			 *
+			 * POST /api/user/register
+			 * ==========================================
 			 */
 
 			if (
 				path === "/api/user/register" &&
 				request.method === "POST"
 			) {
-				const body =
-					(await request.json()) as UserRequest;
+				const body = (await request.json()) as UserRequest;
 
-				if (!body.minecraft_uuid || !body.username) {
+				if (
+					!body.minecraft_uuid ||
+					!body.username
+				) {
 					return json(
 						{
 							success: false,
@@ -109,102 +224,17 @@ export default {
 					);
 				}
 
-				const uuid = normalizeUuid(body.minecraft_uuid);
-				const username = normalizeUsername(body.username);
-
-				if (!uuid || !username) {
-					return json(
-						{
-							success: false,
-							error: "Ungültige Daten.",
-						},
-						400
-					);
-				}
-
-				/*
-				 * Prüfen, ob Benutzer bereits existiert
-				 */
-
-				const existing = await env.DB
-					.prepare(
-						`SELECT id, minecraft_uuid, username, online, last_online, created_at
-						 FROM users
-						 WHERE minecraft_uuid = ?`
-					)
-					.bind(uuid)
-					.first();
-
-				if (existing) {
-					/*
-					 * Existierenden Benutzer aktualisieren
-					 */
-
-					await env.DB
-						.prepare(
-							`UPDATE users
-							 SET username = ?,
-							     online = 1,
-							     last_online = unixepoch()
-							 WHERE minecraft_uuid = ?`
-						)
-						.bind(username, uuid)
-						.run();
-
-					const updated = await env.DB
-						.prepare(
-							`SELECT id, minecraft_uuid, username, online, last_online, created_at
-							 FROM users
-							 WHERE minecraft_uuid = ?`
-						)
-						.bind(uuid)
-						.first();
-
-					return json({
-						success: true,
-						new_user: false,
-						message: "Benutzer aktualisiert.",
-						user: updated,
-					});
-				}
-
-				/*
-				 * Neuer Benutzer
-				 */
-
-				const result = await env.DB
-					.prepare(
-						`INSERT INTO users
-							(minecraft_uuid, username, online)
-						 VALUES (?, ?, 1)`
-					)
-					.bind(uuid, username)
-					.run();
-
-				const newUser = await env.DB
-					.prepare(
-						`SELECT id, minecraft_uuid, username, online, last_online, created_at
-						 FROM users
-						 WHERE minecraft_uuid = ?`
-					)
-					.bind(uuid)
-					.first();
-
-				return json({
-					success: true,
-					new_user: true,
-					message: "Benutzer wurde registriert.",
-					user: newUser,
-					insert_id: result.meta.last_row_id,
-				});
+				return registerUser(
+					env,
+					body.minecraft_uuid,
+					body.username
+				);
 			}
 
 			/*
 			 * ==========================================
-			 * API: ONLINE
+			 * ONLINE
 			 * ==========================================
-			 *
-			 * POST /api/user/online
 			 */
 
 			if (
@@ -225,7 +255,9 @@ export default {
 					);
 				}
 
-				const uuid = normalizeUuid(body.minecraft_uuid);
+				const uuid = normalizeUuid(
+					body.minecraft_uuid
+				);
 
 				const result = await env.DB
 					.prepare(
@@ -250,16 +282,13 @@ export default {
 				return json({
 					success: true,
 					online: true,
-					message: "Benutzer ist jetzt online.",
 				});
 			}
 
 			/*
 			 * ==========================================
-			 * API: OFFLINE
+			 * OFFLINE
 			 * ==========================================
-			 *
-			 * POST /api/user/offline
 			 */
 
 			if (
@@ -280,7 +309,9 @@ export default {
 					);
 				}
 
-				const uuid = normalizeUuid(body.minecraft_uuid);
+				const uuid = normalizeUuid(
+					body.minecraft_uuid
+				);
 
 				const result = await env.DB
 					.prepare(
@@ -305,16 +336,13 @@ export default {
 				return json({
 					success: true,
 					online: false,
-					message: "Benutzer ist jetzt offline.",
 				});
 			}
 
 			/*
 			 * ==========================================
-			 * API: ME
+			 * USER ME
 			 * ==========================================
-			 *
-			 * GET /api/user/me?uuid=...
 			 */
 
 			if (
@@ -369,24 +397,14 @@ export default {
 
 			/*
 			 * ==========================================
-			 * API: ONLINE PLAYER COUNT
+			 * ONLINE PLAYER COUNT
 			 * ==========================================
-			 *
-			 * GET /api/stats/online
 			 */
 
 			if (
 				path === "/api/stats/online" &&
 				request.method === "GET"
 			) {
-				/*
-				 * Benutzer werden nach 2 Minuten
-				 * automatisch als offline betrachtet.
-				 *
-				 * Dadurch bleiben Spieler nicht dauerhaft
-				 * online, falls der Launcher abstürzt.
-				 */
-
 				await env.DB
 					.prepare(
 						`UPDATE users
@@ -406,16 +424,15 @@ export default {
 
 				return json({
 					success: true,
-					online_players: result?.count ?? 0,
+					online_players:
+						result?.count ?? 0,
 				});
 			}
 
 			/*
 			 * ==========================================
-			 * API: PLAYER SEARCH
+			 * PLAYER SEARCH
 			 * ==========================================
-			 *
-			 * GET /api/players/search?username=Steve
 			 */
 
 			if (
@@ -425,7 +442,10 @@ export default {
 				const username =
 					url.searchParams.get("username");
 
-				if (!username || username.trim().length < 2) {
+				if (
+					!username ||
+					username.trim().length < 2
+				) {
 					return json(
 						{
 							success: false,
@@ -436,10 +456,6 @@ export default {
 					);
 				}
 
-				/*
-				 * Nach 2 Minuten Inaktivität offline setzen
-				 */
-
 				await env.DB
 					.prepare(
 						`UPDATE users
@@ -449,7 +465,8 @@ export default {
 					)
 					.run();
 
-				const search = `%${username.trim()}%`;
+				const search =
+					`%${username.trim()}%`;
 
 				const result = await env.DB
 					.prepare(
@@ -476,10 +493,8 @@ export default {
 
 			/*
 			 * ==========================================
-			 * API: ALL USERS
+			 * DEBUG USERS
 			 * ==========================================
-			 *
-			 * Nur zum Testen.
 			 *
 			 * GET /api/debug/users
 			 */
@@ -515,7 +530,10 @@ export default {
 			 * ==========================================
 			 */
 
-			if (path === "/" && request.method === "GET") {
+			if (
+				path === "/" &&
+				request.method === "GET"
+			) {
 				const result = await env.DB
 					.prepare(
 						`SELECT COUNT(*) AS count
@@ -524,71 +542,54 @@ export default {
 					)
 					.first<{ count: number }>();
 
-				const onlinePlayers =
-					result?.count ?? 0;
-
 				return new Response(
-					`
-					<!DOCTYPE html>
-					<html lang="de">
-					<head>
-						<meta charset="UTF-8">
-						<title>VoidClient Service</title>
-						<style>
-							body {
-								background:#11151c;
-								color:white;
-								font-family:Arial,sans-serif;
-								display:flex;
-								align-items:center;
-								justify-content:center;
-								height:100vh;
-								margin:0;
-							}
-
-							.box {
-								background:#191f2a;
-								border:1px solid #303949;
-								border-radius:14px;
-								padding:30px;
-								width:420px;
-								text-align:center;
-							}
-
-							.online {
-								color:#35d07f;
-								font-weight:bold;
-							}
-
-							code {
-								background:#0d1117;
-								padding:5px 8px;
-								border-radius:5px;
-							}
-						</style>
-					</head>
-
-					<body>
-						<div class="box">
-							<h1>VoidClient</h1>
-
-							<p class="online">
-								● Launcher-Service online
-							</p>
-
-							<p>
-								Online-Spieler:
-								<strong>${onlinePlayers}</strong>
-							</p>
-
-							<p>
-								API:
-								<code>/api/health</code>
-							</p>
-						</div>
-					</body>
-					</html>
-					`,
+					`<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>VoidClient</title>
+<style>
+body {
+	background:#11151c;
+	color:white;
+	font-family:Arial,sans-serif;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	height:100vh;
+	margin:0;
+}
+.box {
+	background:#191f2a;
+	border:1px solid #303949;
+	border-radius:14px;
+	padding:30px;
+	width:420px;
+	text-align:center;
+}
+.online {
+	color:#35d07f;
+	font-weight:bold;
+}
+code {
+	background:#0d1117;
+	padding:5px 8px;
+	border-radius:5px;
+}
+</style>
+</head>
+<body>
+<div class="box">
+<h1>VoidClient</h1>
+<p class="online">● Launcher-Service online</p>
+<p>
+Online-Spieler:
+<strong>${result?.count ?? 0}</strong>
+</p>
+<p>API: <code>/api/health</code></p>
+</div>
+</body>
+</html>`,
 					{
 						headers: {
 							"content-type":
@@ -607,7 +608,8 @@ export default {
 			return json(
 				{
 					success: false,
-					error: "API-Endpunkt nicht gefunden.",
+					error:
+						"API-Endpunkt nicht gefunden.",
 					path,
 				},
 				404
@@ -618,7 +620,8 @@ export default {
 			return json(
 				{
 					success: false,
-					error: "Interner Serverfehler.",
+					error:
+						"Interner Serverfehler.",
 					details:
 						error instanceof Error
 							? error.message
