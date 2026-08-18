@@ -17,14 +17,26 @@ interface OnlineRequest {
 	username?: string;
 }
 
+interface FriendRequestBody {
+	user_id?: number;
+	friend_id?: number;
+}
+
+interface BlockRequestBody {
+	user_id?: number;
+	blocked_user_id?: number;
+}
+
 function json(data: unknown, status = 200): Response {
 	return new Response(JSON.stringify(data), {
 		status,
 		headers: {
 			"content-type": "application/json; charset=UTF-8",
 			"access-control-allow-origin": "*",
-			"access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-			"access-control-allow-headers": "Content-Type",
+			"access-control-allow-methods":
+				"GET, POST, DELETE, OPTIONS",
+			"access-control-allow-headers":
+				"Content-Type",
 		},
 	});
 }
@@ -36,6 +48,12 @@ function normalizeUsername(username: string): string {
 function normalizeUuid(uuid: string): string {
 	return uuid.trim().replace(/-/g, "").toLowerCase();
 }
+
+/*
+ * ==========================================
+ * REGISTER / LOGIN USER
+ * ==========================================
+ */
 
 async function registerUser(
 	env: Env,
@@ -57,7 +75,13 @@ async function registerUser(
 
 	const existing = await env.DB
 		.prepare(
-			`SELECT id, minecraft_uuid, username, online, last_online, created_at
+			`SELECT
+				id,
+				minecraft_uuid,
+				username,
+				online,
+				last_online,
+				created_at
 			 FROM users
 			 WHERE minecraft_uuid = ?`
 		)
@@ -78,7 +102,13 @@ async function registerUser(
 
 		const updated = await env.DB
 			.prepare(
-				`SELECT id, minecraft_uuid, username, online, last_online, created_at
+				`SELECT
+					id,
+					minecraft_uuid,
+					username,
+					online,
+					last_online,
+					created_at
 				 FROM users
 				 WHERE minecraft_uuid = ?`
 			)
@@ -104,7 +134,13 @@ async function registerUser(
 
 	const newUser = await env.DB
 		.prepare(
-			`SELECT id, minecraft_uuid, username, online, last_online, created_at
+			`SELECT
+				id,
+				minecraft_uuid,
+				username,
+				online,
+				last_online,
+				created_at
 			 FROM users
 			 WHERE minecraft_uuid = ?`
 		)
@@ -151,7 +187,10 @@ export default {
 			 * ==========================================
 			 */
 
-			if (path === "/api/health" && request.method === "GET") {
+			if (
+				path === "/api/health" &&
+				request.method === "GET"
+			) {
 				return json({
 					success: true,
 					service: "VoidClient Launcher Service",
@@ -163,27 +202,25 @@ export default {
 
 			/*
 			 * ==========================================
-			 * JAVA LAUNCHER LOGIN
+			 * LOGIN
 			 *
 			 * POST /api/login
-			 *
-			 * Java sendet:
-			 *
-			 * {
-			 *   "uuid": "...",
-			 *   "username": "..."
-			 * }
 			 * ==========================================
 			 */
 
-			if (path === "/api/login" && request.method === "POST") {
-				const body = (await request.json()) as LoginRequest;
+			if (
+				path === "/api/login" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as LoginRequest;
 
 				if (!body.uuid || !body.username) {
 					return json(
 						{
 							success: false,
-							error: "uuid und username sind erforderlich.",
+							error:
+								"uuid und username sind erforderlich.",
 						},
 						400
 					);
@@ -199,8 +236,6 @@ export default {
 			/*
 			 * ==========================================
 			 * REGISTER
-			 *
-			 * POST /api/user/register
 			 * ==========================================
 			 */
 
@@ -208,7 +243,8 @@ export default {
 				path === "/api/user/register" &&
 				request.method === "POST"
 			) {
-				const body = (await request.json()) as UserRequest;
+				const body =
+					(await request.json()) as UserRequest;
 
 				if (
 					!body.minecraft_uuid ||
@@ -273,7 +309,8 @@ export default {
 					return json(
 						{
 							success: false,
-							error: "Benutzer nicht gefunden.",
+							error:
+								"Benutzer nicht gefunden.",
 						},
 						404
 					);
@@ -327,7 +364,8 @@ export default {
 					return json(
 						{
 							success: false,
-							error: "Benutzer nicht gefunden.",
+							error:
+								"Benutzer nicht gefunden.",
 						},
 						404
 					);
@@ -341,8 +379,10 @@ export default {
 
 			/*
 			 * ==========================================
-			 * USER ME
+			 * GET USER
 			 * ==========================================
+			 *
+			 * GET /api/user/me?uuid=...
 			 */
 
 			if (
@@ -362,7 +402,8 @@ export default {
 					);
 				}
 
-				const uuid = normalizeUuid(uuidParam);
+				const uuid =
+					normalizeUuid(uuidParam);
 
 				const user = await env.DB
 					.prepare(
@@ -383,7 +424,8 @@ export default {
 					return json(
 						{
 							success: false,
-							error: "Benutzer nicht gefunden.",
+							error:
+								"Benutzer nicht gefunden.",
 						},
 						404
 					);
@@ -397,41 +439,10 @@ export default {
 
 			/*
 			 * ==========================================
-			 * ONLINE PLAYER COUNT
-			 * ==========================================
-			 */
-
-			if (
-				path === "/api/stats/online" &&
-				request.method === "GET"
-			) {
-				await env.DB
-					.prepare(
-						`UPDATE users
-						 SET online = 0
-						 WHERE online = 1
-						   AND last_online < unixepoch() - 120`
-					)
-					.run();
-
-				const result = await env.DB
-					.prepare(
-						`SELECT COUNT(*) AS count
-						 FROM users
-						 WHERE online = 1`
-					)
-					.first<{ count: number }>();
-
-				return json({
-					success: true,
-					online_players:
-						result?.count ?? 0,
-				});
-			}
-
-			/*
-			 * ==========================================
-			 * PLAYER SEARCH
+			 * SEARCH PLAYERS
+			 *
+			 * GET
+			 * /api/players/search?username=Blue
 			 * ==========================================
 			 */
 
@@ -456,21 +467,13 @@ export default {
 					);
 				}
 
-				await env.DB
-					.prepare(
-						`UPDATE users
-						 SET online = 0
-						 WHERE online = 1
-						   AND last_online < unixepoch() - 120`
-					)
-					.run();
-
 				const search =
 					`%${username.trim()}%`;
 
 				const result = await env.DB
 					.prepare(
 						`SELECT
+							id,
 							username,
 							minecraft_uuid,
 							online,
@@ -493,10 +496,828 @@ export default {
 
 			/*
 			 * ==========================================
+			 * SEND FRIEND REQUEST
+			 *
+			 * POST /api/friends/request
+			 *
+			 * {
+			 *   "sender_id": 1,
+			 *   "receiver_id": 2
+			 * }
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends/request" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as FriendRequestBody;
+
+				if (
+					!body.sender_id ||
+					!body.receiver_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"sender_id und receiver_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				if (
+					body.sender_id ===
+					body.receiver_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"Du kannst dich nicht selbst hinzufügen.",
+						},
+						400
+					);
+				}
+
+				const users = await env.DB
+					.prepare(
+						`SELECT id
+						 FROM users
+						 WHERE id IN (?, ?)`
+					)
+					.bind(
+						body.sender_id,
+						body.receiver_id
+					)
+					.all();
+
+				if (users.results.length !== 2) {
+					return json(
+						{
+							success: false,
+							error:
+								"Benutzer nicht gefunden.",
+						},
+						404
+					);
+				}
+
+				/*
+				 * Prüfen ob bereits Freunde
+				 */
+
+				const friendship = await env.DB
+					.prepare(
+						`SELECT 1
+						 FROM friendships
+						 WHERE
+							(user_id = ? AND friend_id = ?)
+							OR
+							(user_id = ? AND friend_id = ?)
+						 LIMIT 1`
+					)
+					.bind(
+						body.sender_id,
+						body.receiver_id,
+						body.receiver_id,
+						body.sender_id
+					)
+					.first();
+
+				if (friendship) {
+					return json(
+						{
+							success: false,
+							error:
+								"Ihr seid bereits Freunde.",
+						},
+						409
+					);
+				}
+
+				/*
+				 * Prüfen ob bereits Anfrage existiert
+				 */
+
+				const existingRequest =
+					await env.DB
+						.prepare(
+							`SELECT id, status
+							 FROM friend_requests
+							 WHERE
+								(
+									sender_id = ?
+									AND receiver_id = ?
+								)
+								OR
+								(
+									sender_id = ?
+									AND receiver_id = ?
+								)
+							 LIMIT 1`
+						)
+						.bind(
+							body.sender_id,
+							body.receiver_id,
+							body.receiver_id,
+							body.sender_id
+						)
+						.first();
+
+				if (existingRequest) {
+					return json(
+						{
+							success: false,
+							error:
+								"Es existiert bereits eine Freundschaftsanfrage.",
+							request: existingRequest,
+						},
+						409
+					);
+				}
+
+				const result = await env.DB
+					.prepare(
+						`INSERT INTO friend_requests
+							(sender_id, receiver_id, status)
+						 VALUES (?, ?, 'pending')`
+					)
+					.bind(
+						body.sender_id,
+						body.receiver_id
+					)
+					.run();
+
+				/*
+				 * Inbox Nachricht
+				 */
+
+				const sender = await env.DB
+					.prepare(
+						`SELECT username
+						 FROM users
+						 WHERE id = ?`
+					)
+					.bind(body.sender_id)
+					.first<{ username: string }>();
+
+				await env.DB
+					.prepare(
+						`INSERT INTO inbox
+							(user_id, type, title, message)
+						 VALUES (?, ?, ?, ?)`
+					)
+					.bind(
+						body.receiver_id,
+						"friend_request",
+						"Neue Freundschaftsanfrage",
+						`${sender?.username ?? "Ein Spieler"} möchte dich als Freund hinzufügen.`
+					)
+					.run();
+
+				return json({
+					success: true,
+					message:
+						"Freundschaftsanfrage gesendet.",
+					request_id:
+						result.meta.last_row_id,
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * GET FRIEND REQUESTS
+			 *
+			 * GET /api/friends/requests?user_id=1
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends/requests" &&
+				request.method === "GET"
+			) {
+				const userId =
+					Number(
+						url.searchParams.get(
+							"user_id"
+						)
+					);
+
+				if (!userId) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id fehlt.",
+						},
+						400
+					);
+				}
+
+				const result = await env.DB
+					.prepare(
+						`SELECT
+							fr.id,
+							fr.sender_id,
+							u.username,
+							u.minecraft_uuid,
+							u.online,
+							fr.created_at
+						 FROM friend_requests fr
+						 JOIN users u
+							ON u.id = fr.sender_id
+						 WHERE
+							fr.receiver_id = ?
+							AND fr.status = 'pending'
+						 ORDER BY fr.created_at DESC`
+					)
+					.bind(userId)
+					.all();
+
+				return json({
+					success: true,
+					requests: result.results,
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * ACCEPT FRIEND REQUEST
+			 *
+			 * POST /api/friends/accept
+			 *
+			 * {
+			 *   "user_id": 2,
+			 *   "request_id": 5
+			 * }
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends/accept" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as {
+						user_id?: number;
+						request_id?: number;
+					};
+
+				if (
+					!body.user_id ||
+					!body.request_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und request_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				const requestData =
+					await env.DB
+						.prepare(
+							`SELECT
+								id,
+								sender_id,
+								receiver_id
+							 FROM friend_requests
+							 WHERE
+								id = ?
+								AND receiver_id = ?
+								AND status = 'pending'`
+						)
+						.bind(
+							body.request_id,
+							body.user_id
+						)
+						.first<{
+							id: number;
+							sender_id: number;
+							receiver_id: number;
+						}>();
+
+				if (!requestData) {
+					return json(
+						{
+							success: false,
+							error:
+								"Freundschaftsanfrage nicht gefunden.",
+						},
+						404
+					);
+				}
+
+				/*
+				 * Freundschaft in beide Richtungen
+				 */
+
+				await env.DB
+					.prepare(
+						`INSERT OR IGNORE INTO friendships
+							(user_id, friend_id)
+						 VALUES (?, ?), (?, ?)`
+					)
+					.bind(
+						requestData.sender_id,
+						requestData.receiver_id,
+						requestData.receiver_id,
+						requestData.sender_id
+					)
+					.run();
+
+				await env.DB
+					.prepare(
+						`UPDATE friend_requests
+						 SET status = 'accepted'
+						 WHERE id = ?`
+					)
+					.bind(body.request_id)
+					.run();
+
+				const receiver =
+					await env.DB
+						.prepare(
+							`SELECT username
+							 FROM users
+							 WHERE id = ?`
+						)
+						.bind(
+							requestData.receiver_id
+						)
+						.first<{
+							username: string;
+						}>();
+
+				await env.DB
+					.prepare(
+						`INSERT INTO inbox
+							(user_id, type, title, message)
+						 VALUES (?, ?, ?, ?)`
+					)
+					.bind(
+						requestData.sender_id,
+						"friend_accepted",
+						"Freundschaftsanfrage angenommen",
+						`${receiver?.username ?? "Der Spieler"} hat deine Freundschaftsanfrage angenommen.`
+					)
+					.run();
+
+				return json({
+					success: true,
+					message:
+						"Ihr seid jetzt Freunde.",
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * DECLINE FRIEND REQUEST
+			 *
+			 * POST /api/friends/decline
+			 *
+			 * {
+			 *   "user_id": 2,
+			 *   "request_id": 5
+			 * }
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends/decline" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as {
+						user_id?: number;
+						request_id?: number;
+					};
+
+				if (
+					!body.user_id ||
+					!body.request_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und request_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				const result = await env.DB
+					.prepare(
+						`UPDATE friend_requests
+						 SET status = 'declined'
+						 WHERE
+							id = ?
+							AND receiver_id = ?
+							AND status = 'pending'`
+					)
+					.bind(
+						body.request_id,
+						body.user_id
+					)
+					.run();
+
+				if (result.meta.changes === 0) {
+					return json(
+						{
+							success: false,
+							error:
+								"Freundschaftsanfrage nicht gefunden.",
+						},
+						404
+					);
+				}
+
+				return json({
+					success: true,
+					message:
+						"Freundschaftsanfrage abgelehnt.",
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * FRIEND LIST
+			 *
+			 * GET /api/friends?user_id=1
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends" &&
+				request.method === "GET"
+			) {
+				const userId =
+					Number(
+						url.searchParams.get(
+							"user_id"
+						)
+					);
+
+				if (!userId) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id fehlt.",
+						},
+						400
+					);
+				}
+
+				const result = await env.DB
+					.prepare(
+						`SELECT
+							u.id,
+							u.username,
+							u.minecraft_uuid,
+							u.online,
+							u.last_online,
+							f.friends_since
+						 FROM friendships f
+						 JOIN users u
+							ON u.id = f.friend_id
+						 WHERE f.user_id = ?
+						 ORDER BY
+							u.online DESC,
+							u.username ASC`
+					)
+					.bind(userId)
+					.all();
+
+				return json({
+					success: true,
+					friends: result.results,
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * REMOVE FRIEND
+			 *
+			 * DELETE
+			 * /api/friends?user_id=1&friend_id=2
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/friends" &&
+				request.method === "DELETE"
+			) {
+				const userId =
+					Number(
+						url.searchParams.get(
+							"user_id"
+						)
+					);
+
+				const friendId =
+					Number(
+						url.searchParams.get(
+							"friend_id"
+						)
+					);
+
+				if (!userId || !friendId) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und friend_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				await env.DB
+					.prepare(
+						`DELETE FROM friendships
+						 WHERE
+							(user_id = ? AND friend_id = ?)
+							OR
+							(user_id = ? AND friend_id = ?)`
+					)
+					.bind(
+						userId,
+						friendId,
+						friendId,
+						userId
+					)
+					.run();
+
+				return json({
+					success: true,
+					message:
+						"Freund entfernt.",
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * BLOCK USER
+			 *
+			 * POST /api/block
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/block" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as BlockRequestBody;
+
+				if (
+					!body.user_id ||
+					!body.blocked_user_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und blocked_user_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				if (
+					body.user_id ===
+					body.blocked_user_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"Du kannst dich nicht selbst blockieren.",
+						},
+						400
+					);
+				}
+
+				await env.DB
+					.prepare(
+						`INSERT OR IGNORE INTO blocked_users
+							(user_id, blocked_user_id)
+						 VALUES (?, ?)`
+					)
+					.bind(
+						body.user_id,
+						body.blocked_user_id
+					)
+					.run();
+
+				/*
+				 * Freundschaft gleichzeitig entfernen
+				 */
+
+				await env.DB
+					.prepare(
+						`DELETE FROM friendships
+						 WHERE
+							(user_id = ? AND friend_id = ?)
+							OR
+							(user_id = ? AND friend_id = ?)`
+					)
+					.bind(
+						body.user_id,
+						body.blocked_user_id,
+						body.blocked_user_id,
+						body.user_id
+					)
+					.run();
+
+				return json({
+					success: true,
+					message:
+						"Benutzer blockiert.",
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * UNBLOCK USER
+			 *
+			 * DELETE /api/block
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/block" &&
+				request.method === "DELETE"
+			) {
+				const userId =
+					Number(
+						url.searchParams.get(
+							"user_id"
+						)
+					);
+
+				const blockedUserId =
+					Number(
+						url.searchParams.get(
+							"blocked_user_id"
+						)
+					);
+
+				if (
+					!userId ||
+					!blockedUserId
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und blocked_user_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				await env.DB
+					.prepare(
+						`DELETE FROM blocked_users
+						 WHERE
+							user_id = ?
+							AND blocked_user_id = ?`
+					)
+					.bind(
+						userId,
+						blockedUserId
+					)
+					.run();
+
+				return json({
+					success: true,
+					message:
+						"Benutzer entblockiert.",
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * INBOX
+			 *
+			 * GET /api/inbox?user_id=1
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/inbox" &&
+				request.method === "GET"
+			) {
+				const userId =
+					Number(
+						url.searchParams.get(
+							"user_id"
+						)
+					);
+
+				if (!userId) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id fehlt.",
+						},
+						400
+					);
+				}
+
+				const result = await env.DB
+					.prepare(
+						`SELECT
+							id,
+							type,
+							title,
+							message,
+							is_read,
+							created_at
+						 FROM inbox
+						 WHERE user_id = ?
+						 ORDER BY created_at DESC
+						 LIMIT 50`
+					)
+					.bind(userId)
+					.all();
+
+				return json({
+					success: true,
+					messages: result.results,
+				});
+			}
+
+			/*
+			 * ==========================================
+			 * MARK INBOX MESSAGE READ
+			 *
+			 * POST /api/inbox/read
+			 *
+			 * {
+			 *   "user_id": 1,
+			 *   "message_id": 5
+			 * }
+			 * ==========================================
+			 */
+
+			if (
+				path === "/api/inbox/read" &&
+				request.method === "POST"
+			) {
+				const body =
+					(await request.json()) as {
+						user_id?: number;
+						message_id?: number;
+					};
+
+				if (
+					!body.user_id ||
+					!body.message_id
+				) {
+					return json(
+						{
+							success: false,
+							error:
+								"user_id und message_id sind erforderlich.",
+						},
+						400
+					);
+				}
+
+				await env.DB
+					.prepare(
+						`UPDATE inbox
+						 SET is_read = 1
+						 WHERE
+							id = ?
+							AND user_id = ?`
+					)
+					.bind(
+						body.message_id,
+						body.user_id
+					)
+					.run();
+
+				return json({
+					success: true,
+				});
+			}
+
+			/*
+			 * ==========================================
 			 * DEBUG USERS
 			 * ==========================================
-			 *
-			 * GET /api/debug/users
 			 */
 
 			if (
@@ -598,12 +1419,6 @@ Online-Spieler:
 					}
 				);
 			}
-
-			/*
-			 * ==========================================
-			 * 404
-			 * ==========================================
-			 */
 
 			return json(
 				{
